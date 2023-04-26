@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"bytes"
@@ -58,7 +58,7 @@ func ReadYaml(pathyaml string) (yml []byte, err error) {
 func CadastrarUrl(w http.ResponseWriter, r *http.Request) {
 	var url pathUrl
 	json.NewDecoder(r.Body).Decode(&url)
-	data, err := ReadYaml("/urlshort/teste.yaml")
+	data, err := ReadYaml("teste.yaml")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -71,7 +71,7 @@ func CadastrarUrl(w http.ResponseWriter, r *http.Request) {
 
 	buff.WriteString(fmt.Sprintf("\n- path: %s\n  url: %s", url.Path, url.URL))
 
-	os.WriteFile("/home/raul/go/src/gophercises/urlshort/teste.yaml", buff.Bytes(), fs.ModeAppend)
+	os.WriteFile("teste.yaml", buff.Bytes(), fs.ModeAppend)
 
 	w.Write([]byte(fmt.Sprintf("URL encurtada: localhost:8080/%s", url.Path)))
 }
@@ -80,7 +80,7 @@ func Redirect(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	path := vars["path"]
 
-	yaml, err := ReadYaml("/home/raul/go/src/gophercises/urlshort/teste.yaml")
+	yaml, err := ReadYaml("teste.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
