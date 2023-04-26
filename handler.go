@@ -1,59 +1,33 @@
-package urlshort
+package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/fs"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 
+	cryptoRand "crypto/rand"
+
+	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
 )
 
 type pathUrl struct {
 	Path string `yaml:"path"`
-	URL  string `yaml:"url"`
+	URL  string `yaml:"url" json:"url"`
 }
 
-// MapHandler retornará um http.HandlerFunc (que também
-// implementa http.Handler) que tentará mapear qualquer
-// caminhos (chaves no mapa) para sua URL correspondente (valores
-// para onde cada chave no mapa aponta, em formato de string).
-// Se o caminho não for fornecido no mapa, então o fallback
-// http.Handler será chamado em seu lugar.
-func MapHandler(pathsToUrls map[string]string, fallback http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		log.Println(pathsToUrls[path])
-		if dest, ok := pathsToUrls[path]; ok {
-			http.Redirect(w, r, dest, http.StatusFound)
-			return
-		}
-		fallback.ServeHTTP(w, r)
-	}
-}
-
-// YAMLHandler irá analisar o YAML fornecido e então retornar
-// um http.HandlerFunc (que também implementa http.Handler)
-// que tentará mapear quaisquer caminhos para seus correspondentes
-// URL. Se o caminho não for fornecido no YAML, o
-// o substituto http.Handler será chamado em seu lugar.
-//
-// Espera-se que YAML esteja no formato:
-//
-//     - path: /some-path
-//       url: https://www.some-url.com/demo
-//
-// Os únicos erros que podem ser retornados estão todos relacionados a ter
-// dados YAML inválidos.
-//
-// Consulte MapHandler para criar um http.HandlerFunc semelhante via
-// um mapeamento de caminhos para urls.
-func YAMLHandler(ymlbytes []byte, fallback http.Handler) (http.HandlerFunc, error) {
+func YAMLHandler(ymlbytes []byte) (urls map[string]string, err error) {
 	parsedYaml, err := parseYAML(ymlbytes)
 	if err != nil {
 		return nil, err
 	}
-	urls := buildMap(parsedYaml)
-	return MapHandler(urls, fallback), nil
+	urls = buildMap(parsedYaml)
+	return urls, nil
 }
 
 func parseYAML(in []byte) (dst []map[string]string, err error) {
@@ -79,4 +53,80 @@ func ReadYaml(pathyaml string) (yml []byte, err error) {
 	}
 
 	return
+}
+
+func CadastrarUrl(w http.ResponseWriter, r *http.Request) {
+	var url pathUrl
+	json.NewDecoder(r.Body).Decode(&url)
+	data, err := ReadYaml("/urlshort/teste.yaml")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	buff := bytes.NewBuffer(data)
+
+	randString := RandomString(5, 1, 3)
+	url.Path = randString
+
+	buff.WriteString(fmt.Sprintf("\n- path: %s\n  url: %s", url.Path, url.URL))
+
+	os.WriteFile("/home/raul/go/src/gophercises/urlshort/teste.yaml", buff.Bytes(), fs.ModeAppend)
+
+	w.Write([]byte(fmt.Sprintf("URL encurtada: localhost:8080/%s", url.Path)))
+}
+
+func Redirect(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	path := vars["path"]
+
+	yaml, err := ReadYaml("/home/raul/go/src/gophercises/urlshort/teste.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pathsToUrls, err := YAMLHandler(yaml)
+	if err != nil {
+		panic(err)
+	}
+
+	if dest, ok := pathsToUrls[path]; ok {
+		http.Redirect(w, r, dest, http.StatusFound)
+		return
+	} else {
+		http.Error(w, "URL não encontrada", http.StatusBadRequest)
+	}
+}
+
+func RandomString(size, uppercase, number int) string {
+	var (
+		randString               string
+		isNumber, isUppercase, c int
+	)
+
+	for i := 0; i < size; i++ {
+		isNumber = randInt(100)
+		if isNumber < number {
+			c = randInt(10) + 48
+		} else {
+			isUppercase = randInt(100)
+			c = randInt(26) + 97
+			if isUppercase < uppercase {
+				c -= 32
+			}
+		}
+		randString += string(rune(c))
+	}
+
+	return randString
+}
+
+// RandInt return a non-crypt safe pseudo-random integer
+func RandInt(ceil int) int {
+	return randInt(ceil)
+}
+
+func randInt(top int) int {
+	v, _ := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(top)))
+	return int(v.Int64())
 }
